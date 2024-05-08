@@ -59,7 +59,7 @@ pacman::p_load(
   # 本节课需要用到的 packages
   here, tidyverse, ggplot2,
   # ANOVA & HLM
-  bruceR, lmerTest, lme4, broom, afex, interactions,
+  bruceR, lmerTest, lme4, broom, afex, interactions, easystats, caret, pROC,
   # 生成课件
   xaringan, xaringanthemer, xaringanExtra, knitr)
 
@@ -77,7 +77,9 @@ df.match <- bruceR::import(here::here('data','match','match_raw.csv')) %>%
                 Identity = factor(Identity, levels = c('Self','Other'), labels = c('Self','Other'))) %>%
   dplyr::filter(ACC == 0 | ACC == 1, 
                 RT >= 0.2 & RT <= 1.5,
-                Match == 'match')#筛选
+                Match == 'match',
+                (!Sub %in% c(7302,7303,7338))
+                )#筛选
 ```
 
 ```{r, echo = FALSE}
@@ -91,12 +93,20 @@ df.match.aov <- df.match %>%
 xaringanExtra::use_panelset()
 ```
 
-#上节课更新内容
+# 补充内容: easystats系统包的简介
+```{r echo=FALSE, out.width='60%'}
+knitr::include_graphics('./picture/chp10/bilibili.png')
+```
 
+<br>
+<br>
+<center>
+https://www.bilibili.com/video/BV1rz421D7iJ/?spm_id_from=333.337.search-card.all.click
+</center>
 ---
 class: center, middle
 .tit_font[
-当因变量不服从正态分布(如ACC)时如何处理？
+当因变量不服从正态分布(如正确率)时如何处理？
 ]
 ---
 .panelset[
@@ -107,7 +117,10 @@ head(df.match[c(3,11:17)],5) %>% DT::datatable()
 
 .panel[.panel-name[df.match.aov]
 ```{r}
-head(df.match.aov[1:4],5) %>% DT::datatable()
+df.match.aov %>%
+  dplyr::select(1:4) %>%
+  head(5) %>% 
+  DT::datatable()
 ```
 
 ]]]
@@ -151,8 +164,7 @@ knitr::include_graphics('./picture/chp10/plot.png')
 
 ---
 #10.1 广义线性模型(Generalized Linear Model, GLM)
-##回归方程的多种表达形式<br>
-<br>
+##回归方程的多种形式<br>
 .bigfont[
 - 简单线性回归：
 $$Y = b_0+b_1 X_1+ b_2 X_2+…+b_p X_p + \epsilon$$ 
@@ -168,10 +180,10 @@ $$Y \sim X_1 + X_2 + ... + X_n$$
 ##回归方程的多种表达形式<br>
 <br>
 .bigfont[
-- 概率分布的形式：观测项 = 预测项 + 误差项 <br>
+- 回归模型形式：观测项 = 预测项 + 误差项 <br>
 - 假定观测项是正态分布，上述公式可以重新表达为： <br>
 $$y \sim N(\mu, \epsilon)$$ 
-  - 其中，μ为预测值，即
+  - 其中，$\mu$为预测值，即
   $$μ = \beta_0 + \beta_1 x$$
 - 观测值服从以预测项为均值的**正态分布**，观测值与预测值之间的差值就是残差。<br>
 ]
@@ -187,9 +199,11 @@ $$y \sim N(\mu, \epsilon)$$
 ---
 #10.1 广义线性模型(Generalized Linear Model, GLM)
 ![](./picture/chp10/function.png)
+
 ---
 #10.1 广义线性模型(Generalized Linear Model, GLM)
 ![](./picture/chp10/function2.png)
+
 ---
 #10.1 广义线性模型(Generalized Linear Model, GLM)
 ##Generalized Linear Model, GLM
@@ -203,7 +217,7 @@ $$y \sim N(\mu, \epsilon)$$
   - 观测项不一定是正态分布（残差不一定是正态分布）
   - 连接函数不等于其自身
 
-- 广义线性模型，能够对不正态分布的因变量进行建模
+- 广义线性模型，能够对非正态分布的因变量进行建模
 ]
 ---
 #10.2 二项分布(Binomial Distribution)
@@ -230,9 +244,9 @@ $$y \sim N(\mu, \epsilon)$$
 <br><br>
 - 对每一个k（0 ≤ k ≤ n）,事件{X = k} 指”n次试验中事件A恰好发生k次”
 <br><br>
-- 随机变量X服从以n, p为参数的二项分布，写作 X ~ B(n, p) 
+- 随机变量X服从以n, p为参数的二项分布，写作 $X \sim B(n, p)$ 
 <br><br>
-- p∈[0,1] ,n∈N 
+- $p \in [0,1]$, $n \in N$ 
 
 $$P(X=k )=𝐶_𝑛^𝑘 𝑝^𝑘 𝑞^{𝑛−𝑘}= 𝐶_𝑛^𝑘 𝑝^𝑘 (1−𝑝)^{𝑛−𝑘}$$
 $$𝐶_𝑛^𝑘= 𝑛!/𝑘!(𝑛−𝑘)! $$
@@ -280,20 +294,20 @@ simulate_coin_toss(prob_head = 0.5,num_people = 1000, num_tosses = 10)
 ---
 #10.2 二项分布(Binomial Distribution)
 .bigfont[
-- 已知一次试验中的每次尝试中事件A发生的概率p，共进行n次独立重复的伯努利试验
+- 已知一次试验中的每次尝试中事件A发生的概率$p$，共进行$n$次独立重复的伯努利试验
 - 事件A在一次试验中出现k次，事件A在n次试验中出现次数的平均数
 $$（𝑘_1+𝑘_2+𝑘_3+...+𝑘_𝑛/𝑛)$$
-- 当n → ∞，p ≠ q，np ≥5且nq≥5，事件A在n次试验中出现次数的平均数：
+- 当n → ∞，$p$ ≠ q，$np$ ≥ 5且$nq$ ≥ 5，事件A在$n$次试验中出现次数的平均数：
 $$\mu = np$$
 - 事件A出现次数所属分布的标准差：
-$$𝜎 = √(𝑛𝑝𝑞 )$$
+$$ \sigma = \sqrt{𝑛𝑝𝑞}$$
 ]
 ---
 #10.2 二项分布(Binomial Distribution)
-##如何将z与二分变量进行连接？
-###(1)将预测项映射到(0,1)之间，例如，使用
+## 如何将$z$与二分变量进行连接？
+### (1)将预测项映射到(0,1)之间，例如，使用
 $$\frac{1}{1+exp(-z)}$$
-###(2)找到一个分布，能根据(0,1)之间的值转成二分变量，例如，伯努利分布。
+### (2)找到一个分布，能根据(0,1)之间的值转成二分变量，例如，伯努利分布。
 .pull-left[
 ![](./picture/chp10/func.png)
 ]
@@ -314,145 +328,118 @@ knitr::include_graphics('./picture/chp10/func2.png')
 - 该求解过程比较复杂，一般由计算机自动完成
 ]
 ![](./picture/chp10/logit.png)
----
-#10.3 其他分布
-##泊松分布(Poisson distribution)
-.bigfont[
-- 在固定时间间隔或空间区域内发生某种事件的次数的概率。
-- 适用于事件以恒定平均速率独立发生的情况
-- 例如电话呼叫、网站访问、机器故障等。
-$$P(X = k) = \frac{e^{-\lambda} \lambda^k}{k!}$$
-- λ:事件在给定时间或空间内的平均发生率（或平均数量）。
-- k:可能的事件发生次数，可以是0, 1, 2, …
-]
----
-#10.3 其他分布
-##泊松分布(Poisson distribution)
 
-```{r}
-set.seed(123) # 设置随机种子以获得可重复的结果
-random_samples <- rpois(1000, lambda = 5)
-hist(random_samples,col = 'white', border = 'black',)
-```
-
----
-#10.3 其他分布
-##泊松分布(Poisson distribution)
-![](./picture/chp10/poission.png)
----
-#10.3 其他分布
-##伽马分布(Gamma distribution)
-<br>
-.bigfont[
-- 伽马分布（Gamma Distribution）是统计学的一种连续概率函数，是概率统计中一种非常重要的分布。
-- “指数分布”和“卡方分布”都是伽马分布的特例。
-$$f(x | \alpha, \beta) = \frac{\beta^\alpha x^{\alpha-1} e^{-\beta x}}{\Gamma(\alpha)}$$
-- α:形状参数（shape parameter），决定了分布的曲线形态，尤其是峰值的位置和曲线的尖峭程度。
-- β:尺度参数（scale parameter），影响分布的宽度；当尺度参数增大时，分布会变得更宽且矮平；尺度参数减小时，分布会变得更窄且高耸。
-]
----
-#10.3 其他分布
-##伽马分布(Gamma distribution)
-```{r echo=FALSE, out.width='60%'}
-knitr::include_graphics('./picture/chp10/gamma.webp')
-```
 
 
 
 ---
-#10.4 代码实操
+#10.3 代码实操
 ##首先分析一个被试的数据
 ```{r}
-df.match.7302 <- df.match %>%
-  dplyr::filter(Sub == 7302)
-model_7302_full <- stats::glm(data = df.match.7302,
-                          formula = ACC ~ 1 + Identity * Valence,
-                          family = binomial)
-summary(model_7302_full) %>%
-  capture.output() %>% .[c(6:11,15:19)]
+df.match.7304 <- df.match %>%
+  dplyr::filter(Sub == 7304) #选择被试7304
+mod_7304_full <- stats::glm(data = df.match.7304, #数据
+                          formula = ACC ~ 1 + Identity * Valence, #模型
+                          family = binomial) #因变量为二项分布
+summary(mod_7304_full) %>% #查看模型信息
+  capture.output() %>% .[c(6:11,15:19)] #课堂展示重要结果
 ```
 
 ---
-#10.4 代码实操
+#10.3 代码实操
 
 .panelset[
-.panel[.panel-name[model_null]
+.panel[.panel-name[mod_null]
 ```{r}
 #无固定效应
-model_null <- lme4::glmer(data = df.match,
-                   formula = ACC ~ (1 + Identity * Valence|Sub),
-                   family = binomial)
-summary(model_null) %>%
-  capture.output()%>% .[c(7:8,14:24,27:28)]
+mod_null <- lme4::glmer(data = df.match, #数据
+                   formula = ACC ~ (1 + Identity * Valence|Sub), #模型
+                   family = binomial) #因变量二项分布
+#performance::model_performance(mod_null)
+summary(mod_null) %>%
+  capture.output()%>% .[c(7:8,14:24)]
 ```
 
-.panel[.panel-name[model]
+.panel[.panel-name[mod]
 ```{r}
 #随机截距，固定斜率
-model <- lme4::glmer(data = df.match,
-                     formula = ACC ~ 1 + Identity * Valence + (1|Sub), 
-                     family = binomial)
-summary(model) %>%
+mod <- lme4::glmer(data = df.match, #数据
+                     formula = ACC ~ 1 + Identity * Valence + (1|Sub), #模型
+                     family = binomial) #因变量二项分布
+#performance::model_performance(mod)
+summary(mod) %>%
   capture.output() %>% .[c(7:8,14:24,28:32)]
 ```
 
 .panel[.panel-name[model_full]
 ```{r}
 #随机截距，随机斜率
-model_full <- lme4::glmer(data = df.match,
-                          formula = ACC ~ 1 + Identity * Valence + (1 + Identity * Valence|Sub), 
-                          family = binomial)
-summary(model_full) %>%
-  capture.output() %>% .[c(7:8,14:20,22:27,31:35)]
+mod_full <- lme4::glmer(data = df.match, #数据
+                          formula = ACC ~ 1 + Identity * Valence + (1 + Identity * Valence|Sub), #模型
+                          family = binomial) #因变量二项分布
+##performance::model_performance(mod_full)
+summary(mod_full) %>%
+  capture.output() %>% .[c(6:8,13:18,21:26,30:34)]
 ```
 
-.panel[.panel-name[模型比较]
+.panel[.panel-name[模型比较anova]
 ```{r}
-stats::anova(model, model_null, model_full)
+stats::anova(mod_null, mod, mod_full) #比较三个模型
 ```
-]]]]]
+
+.panel[.panel-name[模型比较compare_performance]
+```{r,results='hide'}
+performance::compare_performance(mod_null, mod, mod_full, rank = TRUE, verbose = FALSE)
+```
+
+![](./picture/chp10/performance1.png)
+]]]]]]
 
 ---
-#10.4 代码实操
+#10.3 代码实操
 ##结果解读
 ```{r}
-summary(model_full) %>% capture.output() %>% .[c(22:27)]
+summary(mod_full) %>% capture.output() %>% .[c(21:27)]
 ```
-```{r echo=FALSE, out.width='70%'}
+
+```{r echo=FALSE, out.width='60%'}
 knitr::include_graphics('./picture/chp10/logit2.png')
 ```
 .pull-left[
 - MoralSelf:
-$$P=\frac{e^{2.73}}{1+e^{2.73}} $$
+$P=\frac{e^{2.73}}{1+e^{2.73}} = 0.939$
+<br>
 - ImmoralSelf:
-$$P=\frac{e^{2.73-1.10 }}{1+e^{2.73-1.10}}$$
+$P=\frac{e^{2.73-1.10 }}{1+e^{2.73-1.10}} = 0.836$
 ]
 .pull-right[
-MoralOther:
-$$P=\frac{e^{2.73-0.76 }}{1+e^{2.73-0.76 }}$$
-ImmoralOther:
-$$P=\frac{e^{2.73-0.76-1.10+0.89}}{1+e^{2.73-0.76-1.10+0.89}}$$
+- MoralOther:
+$P=\frac{e^{2.73-0.76 }}{1+e^{2.73-0.76 }} = 0.878$
+<br>
+- ImmoralOther:
+$P=\frac{e^{2.73-0.76-1.10+0.89}}{1+e^{2.73-0.76-1.10+0.89}} = 0.853$
 ]
 ---
-#10.4 代码实操
+#10.3 代码实操
 
 ```{r}
 #交互作用
-interactions::cat_plot(model = model_full,
+interactions::cat_plot(model = mod_full,
                        pred = Identity,
                        modx = Valence)
 ```
 
+
 ---
-#10.5 方法比较
+#10.4 方法比较
 
 .panelset[
 .panel[.panel-name[anova]
 ```{r, results = 'hide'}
-res <- bruceR::MANOVA(data = df.match.aov,
+res <- bruceR::MANOVA(data = df.match.aov, #数据
        subID = 'Sub', # 被试编号
-       dv= 'mean_ACC', # dependent variable
-       within = c('Identity', 'Valence')) 
+       dv= 'mean_ACC', # 因变量
+       within = c('Identity', 'Valence')) #自变量（被试内）
 ```
 
 ```{r}
@@ -469,17 +456,185 @@ res %>%
 
 .panel[.panel-name[GLM]
 ```{r}
-stats::anova(model_full)
+stats::anova(mod_full)
 ```
 
 .panel[.panel-name[HLM]
+
+
 ```{r}
-mod <- lme4::lmer(data = df.match.aov,
+mod_anova <- lme4::lmer(data = df.match,
+                        formula = ACC ~ 1 + Identity * Valence + (1 + Identity * Valence|Sub))
+stats::anova(mod_anova)
+```
+
+.panel[.panel-name[HLM_mean]
+```{r}
+mod_mean <- lme4::lmer(data = df.match.aov,
                           formula = mean_ACC ~ 1 + Identity * Valence + (1|Sub) + (1|Identity:Sub) + (1|Valence:Sub))
-stats::anova(mod)
+stats::anova(mod_mean)
 
 ```
-]]]]]
+
+.panel[.panel-name[compare]
+```{r, results='hide'}
+performance::compare_performance(mod_full, mod_anova, rank = TRUE, verbose = FALSE)
+```
+
+![](./picture/chp10/performance2.png)
+
+```{r}
+stats::anova(mod_full, mod_anova)
+```
+
+
+]]]]]]]
+
+---
+#10.4 方法比较
+## 留出法
+```{r model prediction}
+# 设置种子以确保结果的可重复性
+set.seed(456)
+
+# 随机选择70%的数据作为训练集，剩余的30%作为测试集
+train_index <- caret::createDataPartition(df.match$Sub, p = 0.7, list = FALSE)
+train_data <- df.match[train_index, ]
+test_data <- df.match[-train_index, ]
+
+# 根据训练集生成模型
+model_full <- lme4::glmer(data = train_data,
+                          formula = ACC ~ 1 + Identity * Valence + (1 + Identity * Valence|Sub), 
+                          family = binomial)
+model_anova <- lme4::lmer(data = train_data,
+                          formula = ACC ~ 1 + Identity * Valence + (1 + Identity * Valence|Sub))
+
+# 使用模型进行预测
+pre_mod_full <- stats::predict(model_full, newdata = test_data, type = 'response')
+pre_mod_anova <- stats::predict(model_anova, newdata = test_data)
+
+```
+
+
+---
+#10.4 方法比较
+## 留出法
+.pull-left[
+```{r}
+# 计算模型的性能指标
+performance_mod_full <- c(RMSE = sqrt(mean((test_data$ACC - pre_mod_full)^2)),
+                R2 = cor(test_data$ACC, pre_mod_full)^2)
+# 打印性能指标
+print(performance_mod_full)
+```
+]
+.pull-right[
+```{r}
+# 计算模型的性能指标
+performance_mod_anova <- c(RMSE = sqrt(mean((test_data$ACC - pre_mod_anova)^2)),
+                R2 = cor(test_data$ACC, pre_mod_anova)^2)
+
+# 打印性能指标
+print(performance_mod_anova)
+```
+
+]
+
+---
+#10.4 方法比较
+## 留出法
+```{r}
+# 将预测概率转换为分类结果
+predicted_classes <- ifelse(pre_mod_full > 0.5, 1, 0)
+# 计算混淆矩阵
+confusion_matrix <- caret::confusionMatrix(as.factor(predicted_classes), as.factor(test_data$ACC))
+
+```
+
+---
+#10.4 方法比较
+## 留出法
+```{r}
+# 打印混淆矩阵和性能指标
+print(confusion_matrix)
+```
+
+---
+#10.4 方法比较
+## 留出法
+.pull-left[
+```{r}
+# 计算ROC曲线和AUC
+roc_result <- pROC::roc(test_data$ACC, pre_mod_full)
+print(roc_result)
+```
+]
+.pull-right[
+```{r}
+# 绘制ROC曲线
+plot(roc_result, main = "ROC Curve", col = "blue", lwd = 2)
+abline(a = 0, b = 1, lty = 2) # 添加对角线
+```
+
+]
+---
+#10.4 方法比较
+## 重复测量分析的不足
+.bigfont[
+- 会产生难以解释的结果
+  - 假设在10个回答中，正确回答8次，错误回答2次
+  - 此时95%CI为[0.52,1.08] ( = 0.8 ± 0.275)
+- 方差不齐，不满足方差分析基本假设
+
+$$\mu = np$$
+$$𝜎 = √(𝑛𝑝𝑞 )$$
+$$𝜎_p^2 = \frac{p(1-p)}{n}$$
+]
+Jaeger, T. F. (2008). Categorical data analysis: Away from ANOVAs (transformation or not) and towards logit mixed models. *Journal of Memory and Language, 59*(4), 434-446. doi:http://dx.doi.org/10.1016/j.jml.2007.11.007
+
+
+---
+#10.5 其他分布
+##泊松分布(Poisson distribution)
+.bigfont[
+- 在固定时间间隔或空间区域内发生某种事件的次数的概率。
+- 适用于事件以恒定平均速率独立发生的情况
+- 例如电话呼叫、网站访问、机器故障等。
+$$P(X = k) = \frac{e^{-\lambda} \lambda^k}{k!}$$
+- λ:事件在给定时间或空间内的平均发生率（或平均数量）。
+- k:可能的事件发生次数，可以是0, 1, 2, …
+]
+---
+#10.5 其他分布
+##泊松分布(Poisson distribution)
+
+```{r}
+set.seed(123) # 设置随机种子以获得可重复的结果
+random_samples <- rpois(1000, lambda = 5)
+hist(random_samples,col = 'white', border = 'black',)
+```
+
+---
+#10.5 其他分布
+##泊松分布(Poisson distribution)
+![](./picture/chp10/poission.png)
+---
+#10.5 其他分布
+##伽马分布(Gamma distribution)
+<br>
+.bigfont[
+- 伽马分布（Gamma Distribution）是统计学的一种连续概率函数，是概率统计中一种非常重要的分布。
+- “指数分布”和“卡方分布”都是伽马分布的特例。
+$$f(x | \alpha, \beta) = \frac{\beta^\alpha x^{\alpha-1} e^{-\beta x}}{\Gamma(\alpha)}$$
+- α:形状参数（shape parameter），决定了分布的曲线形态，尤其是峰值的位置和曲线的尖峭程度。
+- β:尺度参数（scale parameter），影响分布的宽度；当尺度参数增大时，分布会变得更宽且矮平；尺度参数减小时，分布会变得更窄且高耸。
+]
+---
+#10.5 其他分布
+##伽马分布(Gamma distribution)
+```{r echo=FALSE, out.width='60%'}
+knitr::include_graphics('./picture/chp10/gamma.webp')
+```
 
 ---
 class: center, middle
